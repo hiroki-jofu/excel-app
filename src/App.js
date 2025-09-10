@@ -42,6 +42,7 @@ function App() {
   const [sheetNames, setSheetNames] = useState([]);
   const [workbook, setWorkbook] = useState(null);
   const [selectedSheet, setSelectedSheet] = useState('');
+  const [isLoadingRef, setIsLoadingRef] = useState(false);
 
   const processWorkbook = (wb) => {
     setWorkbook(wb);
@@ -65,11 +66,24 @@ function App() {
   };
 
   const handleLoadReferenceFile = () => {
-    fetch('/データ変換例.xlsx')
-      .then(res => res.arrayBuffer())
+    setIsLoadingRef(true);
+    fetch(process.env.PUBLIC_URL + '/sample-data.xlsx')
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Network response was not ok, status: ${res.status}`);
+        }
+        return res.arrayBuffer();
+      })
       .then(ab => {
         const wb = XLSX.read(ab, { type: 'buffer' });
         processWorkbook(wb);
+      })
+      .catch(error => {
+        console.error("Error loading reference file:", error);
+        alert(`参考ファイルの読み込みに失敗しました。エラー: ${error.message}`);
+      })
+      .finally(() => {
+        setIsLoadingRef(false);
       });
   };
 
@@ -112,10 +126,35 @@ function App() {
         const header = headers[i];
         const weightingFactor = row[i];
         if (header && (weightingFactor !== null && weightingFactor !== undefined && weightingFactor !== '')) {
-          const parts = String(header).split(':');
-          const id = parts[0];
-          const name = parts.length > 1 ? parts.slice(1).join(':') : '';
-          newRows.push([...baseData, id, name, weightingFactor]);
+          
+          const headerStr = String(header).trim();
+          let id = '';
+          let name = '';
+
+          // Skip if header is just a number (like a year).
+          if (/^\d+$/.test(headerStr)) {
+            continue;
+          }
+
+          // Try to match 'ID:Name' format, where ID is numeric.
+          let match = headerStr.match(/^(\d+):(.*)/);
+          if (match) {
+            id = match[1];
+            name = match[2];
+          } else {
+            // Try to match 'ID Name' format, where ID is numeric.
+            match = headerStr.match(/^(\d+)\s+(.*)/);
+            if (match) {
+              id = match[1];
+              name = match[2];
+            } else {
+              // If no clear numeric ID, assume the whole header is the name.
+              id = '';
+              name = headerStr;
+            }
+          }
+          
+          newRows.push([...baseData, id.trim(), name.trim(), weightingFactor]);
         }
       }
       return newRows;
@@ -179,9 +218,12 @@ function App() {
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Excel データ変換ツール
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+        <img src={process.env.PUBLIC_URL + '/excel-app-logo.svg'} alt="logo" style={{ width: '40px', height: '40px', marginRight: '15px' }} />
+        <Typography variant="h4" component="h1">
+          Excel データ変換ツール
+        </Typography>
+      </Box>
       <Card component={Paper} elevation={3}>
         <CardContent>
           <Grid container spacing={4}>
@@ -195,7 +237,9 @@ function App() {
                   <Button fullWidth variant="contained" component="span" startIcon={<UploadFileIcon />}>PCからファイルを選択</Button>
                 </label>
               </Box>
-              <Button fullWidth variant="outlined" component="span" startIcon={<NoteAddIcon />} onClick={handleLoadReferenceFile}>参考ファイルを読み込む</Button>
+              <Button fullWidth variant="outlined" component="span" startIcon={<NoteAddIcon />} onClick={handleLoadReferenceFile} disabled={isLoadingRef}>
+                {isLoadingRef ? '読み込み中...' : '参考ファイルを読み込む'}
+              </Button>
               {workbook && (
                 <FormControl fullWidth sx={{ mt: 2 }}>
                   <InputLabel>シートを選択</InputLabel>
